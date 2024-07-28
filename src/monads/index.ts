@@ -1,5 +1,7 @@
 import yaml from 'yaml';
 
+import fs from 'fs/promises';
+
 function isArrayOf(arr: string[], type: "string"): arr is string[];
 function isArrayOf(arr: number[], type: "number"): arr is number[];
 function isArrayOf(arr: boolean[], type: "boolean"): arr is boolean[];
@@ -54,6 +56,7 @@ export class Maybe<T> {
           return this.value === null ? Maybe.nothing<U>() : fn(this.value);
      }
 
+     getOrElse(defaultValue: T): T
      getOrElse(defaultValue: T | null): T | null {
           return this.value === null ? defaultValue : this.value
      }
@@ -130,4 +133,54 @@ export class Cache<T> {
           });
      }
 
+}
+
+export class Memory {
+
+
+     constructor(
+          private readonly storage: Map<string, string> = new Map,
+          private readonly file?: string
+     ) { }
+
+     async set(key: string, value: string) {
+
+          this.storage.set(key, value);
+
+          await this.write();
+
+          return Maybe.just(`Memory set ${key}`);
+     }
+
+     get(key: string): Maybe<string> {
+
+          return Maybe.string(
+               this.storage.has(key) ? `${key}: ${this.storage.get(key)}` : `Key ${key} not found`
+          );
+     }
+
+     read() {
+
+          return Maybe.string(this.storage.entries());
+     }
+
+     private async write() {
+
+          if (!this.file) return;
+
+          await fs.writeFile(this.file, yaml.stringify(this.storage.entries()));
+
+     }
+
+     public static async fromFile(file: string) {
+
+          const storage = await fs.readFile(file, 'utf-8');
+
+          const map = new Map(
+               storage ? yaml.parse(storage) : []
+          ) as Map<string, string>;
+
+          return new Memory(map, file);
+
+     }
 }

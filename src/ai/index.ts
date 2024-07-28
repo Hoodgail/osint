@@ -1,6 +1,7 @@
 import Cloudflare from 'cloudflare';
 import type { Maybe } from '../monads';
 import fs from 'fs';
+import { memory } from './functions/intergrations/storage';
 
 if (!process.env.cloudflare_id) throw new Error("Cloudflare ID not set");
 if (!process.env.cloudflare_key) throw new Error("Cloudflare API key not set");
@@ -136,7 +137,7 @@ export async function final(results: {
 
      };
 
-     return segments.join("\n\n");
+     // return segments.join("\n\n");
 
      const response = await cloudflare.workers.ai.run("@cf/mistral/mistral-7b-instruct-v0.1", {
           messages: [
@@ -167,8 +168,16 @@ export async function processAI(options: {
 
      try {
 
+          const system = `Your memory:\n${memory.read().getOrElse("Memory is empty")}`
+
           const response = await cloudflare.workers.ai.run("@hf/nousresearch/hermes-2-pro-mistral-7b", {
-               messages: [{ role: "user", content: options.input }],
+               messages: [{
+                    role: "system",
+                    content: system
+               }, {
+                    role: "user",
+                    content: options.input
+               }],
                tools: options.tools,
                max_tokens: 1024,
                account_id: process.env.cloudflare_id || "",
@@ -179,6 +188,8 @@ export async function processAI(options: {
           if (!calls) return 'No tool calls found in the response.';
 
           if (!Array.isArray(calls)) calls = [calls];
+
+          console.log("[tool_calls]", calls.map(call => call.name));
 
           // Execute the function calls
           const results = await Promise.all(calls.map(async (call) => {
