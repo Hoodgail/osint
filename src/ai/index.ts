@@ -136,6 +136,8 @@ export async function final(results: {
 
      };
 
+     return segments.join("\n\n");
+
      const response = await cloudflare.workers.ai.run("@cf/mistral/mistral-7b-instruct-v0.1", {
           messages: [
                { role: "system", content: system },

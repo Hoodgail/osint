@@ -4,12 +4,12 @@ import type { FunctionRegistry } from '../../../functions';
 import * as discord from '.';
 import { Maybe } from '../../../../monads';
 
-export const get_guilds: FunctionRegistry = {
+export const get_discord_guilds: FunctionRegistry = {
   tool: {
     type: 'function',
     function: {
-      name: 'get_guilds',
-      description: 'Get an array of guild names',
+      name: 'get_discord_guilds',
+      description: 'Get an array of guild discord names that the user is in',
       parameters: {
         type: 'object',
         properties: {},
@@ -20,12 +20,12 @@ export const get_guilds: FunctionRegistry = {
   call: () => Maybe.string(discord.get_guilds())
 };
 
-export const get_guild: FunctionRegistry = {
+export const get_discord_guild: FunctionRegistry = {
   tool: {
     type: 'function',
     function: {
-      name: 'get_guild',
-      description: 'Get the channels of a specific guild',
+      name: 'get_discord_guild',
+      description: 'Get the channels of a specific discord guild',
       parameters: {
         type: 'object',
         properties: {
@@ -41,12 +41,12 @@ export const get_guild: FunctionRegistry = {
   call: ({ guild_name }: { guild_name: string }) => Maybe.string(discord.get_guild(guild_name))
 };
 
-export const get_direct_messages: FunctionRegistry = {
+export const get_discord_direct_messages: FunctionRegistry = {
   tool: {
     type: 'function',
     function: {
-      name: 'get_direct_messages',
-      description: 'Get an array of direct message channel names',
+      name: 'get_discord_direct_messages',
+      description: 'Get an array of discord direct message channel names',
       parameters: {
         type: 'object',
         properties: {},
@@ -57,12 +57,12 @@ export const get_direct_messages: FunctionRegistry = {
   call: () => Maybe.string(discord.get_direct_messages())
 };
 
-export const get_unread_messages: FunctionRegistry = {
+export const get_discord_unread_messages: FunctionRegistry = {
   tool: {
     type: 'function',
     function: {
-      name: 'get_unread_messages',
-      description: 'Get unread mentions, ignoring @everyone and @here',
+      name: 'get_discord_unread_messages',
+      description: 'Get discord unread mentions, ignoring @everyone and @here',
       parameters: {
         type: 'object',
         properties: {},
@@ -73,12 +73,12 @@ export const get_unread_messages: FunctionRegistry = {
   call: () => Maybe.string(discord.get_unread_messages())
 };
 
-export const get_messages: FunctionRegistry = {
+export const get_discord_messages: FunctionRegistry = {
   tool: {
     type: 'function',
     function: {
-      name: 'get_messages',
-      description: 'Get messages from a specific channel',
+      name: 'get_discord_messages',
+      description: 'Get discord messages from a specific channel',
       parameters: {
         type: 'object',
         properties: {
@@ -127,11 +127,11 @@ export const get_messages: FunctionRegistry = {
   }) => Maybe.string(discord.get_messages(options))
 };
 
-export const send_message: FunctionRegistry = {
+export const send_discord_message: FunctionRegistry = {
   tool: {
     type: 'function',
     function: {
-      name: 'send_message',
+      name: 'send_discord_message',
       description: 'Send a message to a specific channel',
       parameters: {
         type: 'object',
