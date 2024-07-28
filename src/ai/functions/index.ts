@@ -1,7 +1,7 @@
-import { prompt, type AvailableTool, type ToolCall } from "..";
+import { type AvailableTool } from "..";
+import { Maybe } from "../../monads";
 import { getGithubProfile } from "../../socials/github/profile";
-import yaml from "yaml";
-
+import type { FunctionType } from "../../ai";
 
 enum TemperatureUnit {
      Celsius = 'celsius',
@@ -12,7 +12,7 @@ export interface FunctionRegistry {
 
      tool: AvailableTool;
 
-     call: (args: any, prompt: string, tools: ToolCall[]) => Promise<string> | string
+     call: FunctionType
 }
 
 
@@ -46,11 +46,11 @@ export const get_current_weather: FunctionRegistry = {
           const unit = format === 'celsius' ? 'C' : 'F';
           const convertedTemp = format === 'celsius' ? temperature : (temperature * 9 / 5) + 32;
 
-          return yaml.stringify({
+          return Maybe.string({
                location,
                temp: convertedTemp,
                unit
-          });
+          })
 
      }
 }
@@ -77,9 +77,7 @@ export const get_github_profile: FunctionRegistry = {
 
           const profile = await getGithubProfile(username);
 
-          console.log(profile)
-
-          return yaml.stringify(profile, null, 2);
+          return Maybe.string(profile);
 
      }
 }
@@ -131,7 +129,7 @@ export const search_username: FunctionRegistry = {
 
           const results = requests.filter(e => !e.available).map(e => e.url).join(", ")
 
-          return `The username ${query} is an account on the following social media platforms: ${results}`;
+          return Maybe.string(`The username ${query} is an account on the following social media platforms: ${results}`);
 
      }
 }

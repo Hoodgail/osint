@@ -1,9 +1,12 @@
-import axios from 'axios';
 import Cloudflare from 'cloudflare';
+import type { Maybe } from '../monads';
+import fs from 'fs';
 
 if (!process.env.cloudflare_id) throw new Error("Cloudflare ID not set");
 if (!process.env.cloudflare_key) throw new Error("Cloudflare API key not set");
 if (!process.env.cloudflare_email) throw new Error("Cloudflare email not set");
+
+const system = fs.readFileSync("./src/ai/prompts/final.md", "utf8");
 
 export const cloudflare = new Cloudflare({
      apiEmail: process.env['cloudflare_email'],
@@ -43,9 +46,11 @@ export type ToolCall = {
      };
 };
 
+export type FunctionType = (args: any, prompt: string, tools: ToolCall[]) => Promise<Maybe<string>> | Maybe<string>;
+
 // Function registry type
 export type FunctionRegistry = {
-     [key: string]: (args: any, prompt: string, tools: ToolCall[]) => Promise<any>;
+     [key: string]: FunctionType
 };
 
 export interface Segment {
@@ -78,7 +83,7 @@ export async function prompt(options: {
 
      try {
 
-          const response = await cloudflare.workers.ai.run("@cf/mistral/mistral-7b-instruct-v0.1", {
+          const response = await cloudflare.workers.ai.run("@hf/thebloke/llama-2-13b-chat-awq", {
                ...options,
                max_tokens: 1024,
                account_id: process.env.cloudflare_id || "",
@@ -102,10 +107,11 @@ export async function prompt(options: {
      }
 }
 
+
 export async function final(results: {
      functionName: string;
      error?: string;
-     result?: undefined;
+     result?: Maybe<string>;
 }[]) {
 
      const segments: string[] = [];
@@ -126,24 +132,22 @@ export async function final(results: {
                continue;
           }
 
-          segments.push(`-----[${functionName}]\n${result}\n-----`);
+          segments.push(`-----[${functionName}]\n${result.getOrElse("No result")}\n-----`);
 
      };
 
-     const system = "Generate brief, conversational summaries of key information. Use natural language in complete sentences. Include only relevant, non-zero data. Omit unnecessary details, introductions, or explanations. Aim for a casual, informative tone that a person might use when quickly summarizing facts to a friend.";
-
-     const response = await cloudflare.workers.ai.run("@hf/nousresearch/hermes-2-pro-mistral-7b", {
+     const response = await cloudflare.workers.ai.run("@cf/mistral/mistral-7b-instruct-v0.1", {
           messages: [
                { role: "system", content: system },
                { role: "user", content: segments.join("\n\n") }
           ],
-          max_tokens: 1024,
+          max_tokens: 256,
           account_id: process.env["cloudflare_id"]!,
      })
 
      if ("response" in response) {
 
-          return response.response;
+          return response.response?.trim();
 
      }
 
@@ -179,7 +183,11 @@ export async function processAI(options: {
 
                if (call.name && options.registry[call.name]) {
 
+                    console.time(`[function: ${call.name}]`);
+
                     const result = await options.registry[call.name](call.arguments, options.input, calls);
+
+                    console.timeEnd(`[function: ${call.name}]`);
 
                     return { functionName: call.name, result };
 
