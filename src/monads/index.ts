@@ -57,6 +57,7 @@ export class Maybe<T> {
      }
 
      getOrElse(defaultValue: T): T
+     getOrElse(defaultValue: null): null
      getOrElse(defaultValue: T | null): T | null {
           return this.value === null ? defaultValue : this.value
      }
@@ -107,6 +108,10 @@ export class Maybe<T> {
 
           return new Maybe(value);
 
+     }
+
+     isEmpty(): boolean {
+          return this.value === null || this.value === "N/A" || this.value === "" || this.value === undefined || this.value === false;
      }
 }
 

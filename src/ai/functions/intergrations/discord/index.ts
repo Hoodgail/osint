@@ -80,15 +80,14 @@ export async function get_guild(guild_name: string): Promise<Maybe<string[]>> {
 
 // Function to get direct messages
 export async function get_direct_messages(): Promise<Maybe<string[]>> {
-     return cacher.create('direct_messages', async () => {
-          try {
-               const response: AxiosResponse<any[]> = await api.get('/users/@me/channels');
-               return Maybe.just(response.data.filter(channel => channel.type === 1).map(channel => channel.recipients[0].username));
-          } catch (error) {
-               console.error('Error fetching direct messages:', error);
-               return Maybe.nothing<string[]>();
-          }
-     });
+
+     const direct_messages = await cacher.create('direct_messages', getChannels)
+
+     return Maybe.just(
+          direct_messages.getOrElse([])
+               .filter(channel => channel.type === 1).map(channel => channel.recipients[0].username.toLowerCase())
+     );
+
 }
 
 // Function to get unread messages
@@ -119,6 +118,7 @@ export async function get_messages(options: {
      mentions?: string
 }): Promise<Maybe<any[]>> {
      const channelId = await getChannelId(options.channel_name);
+
      if (!channelId) {
           return Maybe.nothing<any[]>();
      }
@@ -158,13 +158,26 @@ export async function send_message(options: { channel_name: string, content: str
      }
 
      try {
+
           const response: AxiosResponse<any> = await api.post(`/channels/${channelId}/messages`, {
                content: options.content
           });
-          return Maybe.just(response.data.id);
+
+          return Maybe.just(response.data.id ?? "Failed to send message");
+
      } catch (error) {
           console.error('Error sending message:', error);
           return Maybe.nothing<string>();
+     }
+}
+
+async function getChannels(): Promise<Maybe<any[]>> {
+     try {
+          const response: AxiosResponse<any[]> = await api.get('/users/@me/channels');
+          return Maybe.just(response.data);
+     } catch (error) {
+          console.error('Error fetching direct messages:', error);
+          return Maybe.nothing<string[]>();
      }
 }
 
@@ -173,14 +186,15 @@ async function getChannelId(channel_name: string): Promise<string | null> {
      if (channel_name.startsWith('@')) {
 
           // DM channel
-          const username = channel_name.slice(1);
-          const dms = await get_direct_messages();
-          const channel = await dms.flatMap(async channels => {
-               const channel = channels.find(c => c === username);
-               return channel ? Maybe.just(channel) : Maybe.nothing<string>();
-          })
+          const username = channel_name.slice(1).toLowerCase();
 
-          return channel.getOrElse(null);
+          const direct_messages = await cacher.create('direct_messages', getChannels)
+
+          const channel = direct_messages.getOrElse([])
+               .filter(channel => channel.type === 1)
+               .find(channel => channel.recipients.some((recipient: any) => recipient.username.toLowerCase() === username))
+
+          return channel.id
 
      } else if (channel_name.startsWith('#')) {
           // Guild channel

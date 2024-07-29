@@ -16,11 +16,11 @@ console.log(
      registry.map(def => def.tool).map(tool => tool.function.name).join(', ')
 );
 
-// process.exit(1)
+process.exit(1)
 
 processAI({
      context: void 0,
-     input: "Can you tell me what hoodgail's last name is?",
+     input: "Ask lemons0 on discord if infora.io is almost ready to be released.",
      tools: registry.map(def => def.tool),
      registry: registry.reduce((acc, def) => ({ ...acc, [def.tool.function.name]: def.call }), {})
 }).then((response) => {

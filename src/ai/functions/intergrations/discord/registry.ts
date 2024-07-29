@@ -149,5 +149,5 @@ export const send_discord_message: FunctionRegistry = {
       },
     },
   },
-  call: (options: { channel_name: string, content: string }) => discord.send_message(options)
+  call: (options: { channel_name: string, content: string }) => discord.send_message(options).then(result => result.isEmpty() ? Maybe.just("Failed to send message") : Maybe.just("Sent message successfully"))
 };
