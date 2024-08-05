@@ -253,7 +253,7 @@ async function getChannelId(channel_name: string): Promise<string | null> {
                channel = channels[index];
           }
 
-          return channel.name
+          return channel.id
 
      } else if (channel_name.startsWith('#')) {
 
