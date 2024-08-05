@@ -270,13 +270,13 @@ async function getChannelId(channel_name: string): Promise<string | null> {
 
                const channels = list.getOrElse([]);
 
-               const channelScores = channels.map(([channelName]) => {
+               const channelScores = channels.map(([id, channelName]) => {
 
                     const name = channelName.toLowerCase();
 
                     let score = JaroWinklerDistance(name, handle);
 
-                    return { channel: channelName, score };
+                    return { channel: id, score };
                });
 
                const bestChannelMatch = channelScores.sort((a, b) => b.score - a.score)[0];
