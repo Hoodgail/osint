@@ -15,6 +15,7 @@
     "cloudflare": "^3.5.0",
     "discord-api-types": "^0.37.93",
     "jsdom": "^24.1.0",
+    "natural": "^7.1.0",
     "yaml": "^2.4.5"
   }
 }

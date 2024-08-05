@@ -4,6 +4,8 @@
 import * as defaults from "./src/ai/functions"
 import * as intergrations from "./src/ai/functions/intergrations"
 
+import { JaroWinklerDistance } from "natural"
+
 import { processAI } from "./src/ai"
 
 const registry = [
@@ -11,6 +13,15 @@ const registry = [
      ...Object.values(intergrations)
 ];
 
+console.log("Loaded AI functions:");
+
+console.time("process");
+
+console.log(
+     JaroWinklerDistance("zhiyan114", "zayan")
+)
+
+console.timeEnd("process");
 
 console.log(
      registry.map(def => def.tool).map(tool => tool.function.name).join(', ')

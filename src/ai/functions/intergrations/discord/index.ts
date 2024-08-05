@@ -1,5 +1,9 @@
 import axios, { type AxiosResponse } from 'axios';
 import { Maybe, Cache } from '../../../../monads';
+import type { APIGuild } from 'discord-api-types/v10';
+import type { APIChannel } from 'discord-api-types/v9';
+
+import { JaroWinklerDistance } from "natural"
 
 if (typeof process.env.discord_token === 'undefined') {
 
@@ -23,69 +27,81 @@ const api = axios.create({
      },
 });
 
+const nlu_tolerance = 0.7;
+
 // Cache implementation
 const cacher = new Cache();
 
 // Function to get guilds
-export async function get_guilds(): Promise<Maybe<string[]>> {
+export async function get_guilds(): Promise<Maybe<[id: string, name: string][]>> {
 
      return cacher.create('guilds', async () => {
 
           try {
 
-               const response: AxiosResponse<any[]> = await api.get('/users/@me/guilds');
+               const response: AxiosResponse<APIGuild[]> = await api.get('/users/@me/guilds');
 
-               return Maybe.just(response.data.map(guild => guild.name as string));
+               return Maybe.just(response.data.map(guild => [guild.id, guild.name]));
 
           } catch (error) {
 
                console.error('Error fetching guilds:', error);
 
-               return Maybe.nothing<string[]>();
+               return Maybe.nothing<[string, string][]>();
 
           }
      });
 }
 
 // Function to get guild channels
-export async function get_guild(guild_name: string): Promise<Maybe<string[]>> {
-
+export async function get_guild_channels(guild_name: string): Promise<Maybe<[id: string, name: string][]>> {
      return cacher.create(`guild_channels_${guild_name}`, async () => {
-
           try {
-
                const guilds = await get_guilds();
 
-               return guilds.flatMap(async (guildNames) => {
+               return await guilds.flatMap(async (list) => {
+                    // Find the best matching guild using JaroWinklerDistance
+                    const guildScores = list.map(([id, name]) => ({
+                         id,
+                         name,
+                         score: JaroWinklerDistance(name.toLowerCase(), guild_name.toLowerCase())
+                    }));
 
-                    const guild = guildNames.find(name => name === guild_name);
+                    const bestMatch = guildScores.reduce((best, current) =>
+                         current.score > best.score ? current : best
+                    );
 
-                    if (!guild) {
-                         return Maybe.nothing<string[]>();
+                    if (bestMatch.score < nlu_tolerance) {
+                         console.log(`No guild found matching "${guild_name}". Did you mean "${bestMatch.name}"?`);
+                         return Maybe.nothing<[id: string, name: string][]>();
                     }
 
-                    const guildId = (await api.get('/users/@me/guilds')).data.find((g: any) => g.name === guild_name).id;
+                    console.log(`Using guild "${bestMatch.name}" (match score: ${bestMatch.score.toFixed(2)})`);
 
-                    const response: AxiosResponse<any[]> = await api.get(`/guilds/${guildId}/channels`);
+                    const response: AxiosResponse<any[]> = await api.get(`/guilds/${bestMatch.id}/channels`);
 
-                    return Maybe.just(response.data.map(channel => channel.name));
+                    return Maybe.just(response.data.map(channel => [channel.id, channel.name]));
+               }) as Maybe<[id: string, name: string][]>;
 
-               });
           } catch (error) {
                console.error('Error fetching guild channels:', error);
-               return Maybe.nothing<string[]>();
+               return Maybe.nothing<[id: string, name: string][]>();
           }
      });
 }
-
 // Function to get direct messages
 export async function get_direct_messages(): Promise<Maybe<string[]>> {
 
      const direct_messages = await cacher.create('direct_messages', getChannels)
 
      return Maybe.just(
+
           direct_messages.getOrElse([])
-               .filter(channel => channel.type === 1).map(channel => channel.recipients[0].username.toLowerCase())
+
+               .filter(channel => channel.type === 1)
+
+               .map(channel => channel.recipients?.[0].username.toLowerCase() ?? "unknown")
+
      );
 
 }
@@ -171,46 +187,132 @@ export async function send_message(options: { channel_name: string, content: str
      }
 }
 
-async function getChannels(): Promise<Maybe<any[]>> {
+async function getChannels(): Promise<Maybe<APIChannel[]>> {
      try {
-          const response: AxiosResponse<any[]> = await api.get('/users/@me/channels');
+          const response: AxiosResponse<APIChannel[]> = await api.get('/users/@me/channels');
           return Maybe.just(response.data);
      } catch (error) {
           console.error('Error fetching direct messages:', error);
-          return Maybe.nothing<string[]>();
+          return Maybe.nothing<APIChannel[]>();
      }
 }
 
 // Helper function to get channel ID from channel name
 async function getChannelId(channel_name: string): Promise<string | null> {
+
      if (channel_name.startsWith('@')) {
 
           // DM channel
-          const username = channel_name.slice(1).toLowerCase();
+          const handle = channel_name.slice(1).toLowerCase();
 
           const direct_messages = await cacher.create('direct_messages', getChannels)
 
-          const channel = direct_messages.getOrElse([])
-               .filter(channel => channel.type === 1)
-               .find(channel => channel.recipients.some((recipient: any) => recipient.username.toLowerCase() === username))
+          const channels = direct_messages.getOrElse([]);
 
-          return channel.id
+          let channel = channels.find(channel => {
+
+               if (channel.type !== 1) return false;
+
+               return channel.recipients?.some((recipient) => {
+
+                    const user = recipient.username.toLowerCase();
+
+                    const global_name = recipient.username.toLowerCase();
+
+                    return user === handle || global_name === handle ||
+                         user.startsWith(handle) || global_name.startsWith(handle) ||
+                         user.endsWith(handle) || global_name.endsWith(handle) ||
+                         user.includes(handle) || global_name.includes(handle);
+
+               })
+
+          });
+
+          if (!channel) {
+
+               const scores = channels.map((channel, index) => {
+
+                    if (channel.type !== 1) return [index, 0];
+
+                    if (!channel.recipients) return [index, 0];
+
+                    const username = channel.recipients[0].username.toLowerCase();
+                    const global_name = channel.recipients[0].username.toLowerCase();
+
+                    let username_score = JaroWinklerDistance(username, handle);
+                    let global_name_score = JaroWinklerDistance(global_name, handle);
+
+                    return [index, Math.max(username_score, global_name_score)];
+
+               });
+
+               const [[index, score]] = scores.sort((a, b) => b[1] - a[1]) as [index: number, score: number][];
+
+               if (+score.toFixed(1) < nlu_tolerance) return null;
+
+               channel = channels[index];
+          }
+
+          return channel.name
 
      } else if (channel_name.startsWith('#')) {
+
           // Guild channel
-          const channelName = channel_name.slice(1);
-          const guilds = await get_guilds();
-          for (const guildName of guilds.getOrElse([]) ?? []) {
+          const handle = channel_name.slice(1).toLowerCase();
 
-               const channels = await get_guild(guildName);
+          const guilds = await cacher.create('guilds', get_guilds);
 
-               const channel = await channels.flatMap(async c => Maybe.just(c.find(ch => ch === channelName)) ?? Maybe.nothing<string>());
+          let bestMatch: { channel: string; score: number } | null = null;
 
-               if (channel.getOrElse(null)) {
+          for (const [, guildName] of guilds.getOrElse([])) {
 
-                    return channel.getOrElse(null) ?? null;
+               const list = await get_guild_channels(guildName);
+
+               const channels = list.getOrElse([]);
+
+               const channelScores = channels.map(([channelName]) => {
+
+                    const name = channelName.toLowerCase();
+
+                    let score = JaroWinklerDistance(name, handle);
+
+                    return { channel: channelName, score };
+               });
+
+               const bestChannelMatch = channelScores.sort((a, b) => b.score - a.score)[0];
+
+               if (!bestMatch || bestChannelMatch.score > bestMatch.score) {
+
+                    bestMatch = bestChannelMatch;
                }
           }
+
+          if (bestMatch && bestMatch.score >= nlu_tolerance) {
+
+               return bestMatch.channel;
+          }
      }
+     return null;
+}
+
+async function getGuildId(guild_name: string): Promise<string | null> {
+     const guilds = await get_guilds();
+     const guildList = guilds.getOrElse([]);
+
+     const guildScores = guildList.map(([id, name]) => ({
+          id,
+          name,
+          score: JaroWinklerDistance(name.toLowerCase(), guild_name.toLowerCase())
+     }));
+
+     const bestMatch = guildScores.reduce((best, current) =>
+          current.score > best.score ? current : best
+     );
+
+     if (bestMatch.score >= nlu_tolerance) {
+          return bestMatch.id;
+     }
+
+     console.log(`No guild found matching "${guild_name}". Did you mean "${bestMatch.name}"?`);
      return null;
 }

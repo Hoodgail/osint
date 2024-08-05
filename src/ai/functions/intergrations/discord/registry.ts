@@ -24,7 +24,7 @@ export const get_discord_guild: FunctionRegistry = {
   tool: {
     type: 'function',
     function: {
-      name: 'get_discord_guild',
+      name: 'get_discord_guild_channels',
       description: 'Get the channels of a specific discord guild',
       parameters: {
         type: 'object',
@@ -38,7 +38,7 @@ export const get_discord_guild: FunctionRegistry = {
       },
     },
   },
-  call: ({ guild_name }: { guild_name: string }) => Maybe.string(discord.get_guild(guild_name))
+  call: ({ guild_name }: { guild_name: string }) => Maybe.string(discord.get_guild_channels(guild_name))
 };
 
 export const get_discord_direct_messages: FunctionRegistry = {
