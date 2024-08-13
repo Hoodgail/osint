@@ -5,15 +5,16 @@ import type { APIChannel } from 'discord-api-types/v9';
 
 import { JaroWinklerDistance } from "natural"
 
-if (typeof process.env.discord_token === 'undefined') {
 
-     throw new Error('Discord token not found in environment variables');
-}
+// if (typeof process.env.discord_token === 'undefined') {
 
-if (typeof process.env.discord_id === 'undefined') {
+//      throw new Error('Discord token not found in environment variables');
+// }
 
-     throw new Error('Discord ID not found in environment variables');
-}
+// if (typeof process.env.discord_id === 'undefined') {
+
+//      throw new Error('Discord ID not found in environment variables');
+// }
 
 // API base URL and token (replace with actual values)
 const API_BASE_URL = 'https://discord.com/api/v10';

@@ -13,25 +13,19 @@ const registry = [
      ...Object.values(intergrations)
 ];
 
-console.log("Loaded AI functions:");
+// console.log(
+//      registry.map(def => def.tool).map(tool => tool.function.name).join(', ')
+// );
+
+console.log("[functions]", registry.length, "registered");
+
+// process.exit(1)
 
 console.time("process");
 
-console.log(
-     JaroWinklerDistance("zhiyan114", "zayan")
-)
-
-console.timeEnd("process");
-
-console.log(
-     registry.map(def => def.tool).map(tool => tool.function.name).join(', ')
-);
-
-process.exit(1)
-
 processAI({
      context: void 0,
-     input: "Ask lemons0 on discord if infora.io is almost ready to be released.",
+     input: "How old is lissa?",
      tools: registry.map(def => def.tool),
      registry: registry.reduce((acc, def) => ({ ...acc, [def.tool.function.name]: def.call }), {})
 }).then((response) => {

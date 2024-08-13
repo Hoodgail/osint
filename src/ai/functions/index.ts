@@ -87,7 +87,7 @@ export const search_username: FunctionRegistry = {
           type: 'function',
           function: {
                name: 'search_username',
-               description: 'Search for a username accross all social media platforms',
+               description: 'Search for a username accross all social media platforms on the internet, heavy task.',
                parameters: {
                     type: 'object',
                     properties: {

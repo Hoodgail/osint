@@ -1,6 +1,9 @@
 import yaml from 'yaml';
-
 import fs from 'fs/promises';
+import path from "path";
+
+import { TfIdf } from "natural"
+import { SemanticSearch } from '../utils/SemanticSearch';
 
 function isArrayOf(arr: string[], type: "string"): arr is string[];
 function isArrayOf(arr: number[], type: "number"): arr is number[];
@@ -17,7 +20,7 @@ function isArrayOf(arr: any, type: string) {
 
 export class Maybe<T> {
 
-     private constructor(private value: T | null) { }
+     constructor(private value: T | null) { }
 
      static just<T>(value: T): Maybe<T> {
           return new Maybe(value);
@@ -142,50 +145,81 @@ export class Cache<T> {
 
 export class Memory {
 
+     private readonly cache: Map<string, string> = new Map;
+
+     private readonly length: Map<string, number> = new Map;     // Length of each document
 
      constructor(
-          private readonly storage: Map<string, string> = new Map,
-          private readonly file?: string
-     ) { }
+          private readonly path: string
+     ) {
+
+     }
+
+     async load() {
+
+          console.time("[memory: read]");
+
+          const files = await fs.readdir(this.path);
+
+          for (let file of files) {
+
+               const location = path.join(this.path, file);
+
+               const raw = await fs.readFile(location, 'utf-8');
+
+               const data = decodeURIComponent(raw);
+
+               this.cache.set(file, data);
+
+               this.length.set(file, data.length);
+
+          }
+
+          console.timeEnd("[memory: read]");
+
+          // Sum of all document lengths
+          const lengths = Array.from(this.length.values()).reduce((a, b) => a + b, 0);
+
+          console.log(`[memory: load] ${lengths} characters in ${this.length.size} documents`);
+
+          return this;
+     }
 
      async set(key: string, value: string) {
 
-          this.storage.set(key, value);
+          const location = path.join(this.path, key);
 
-          await this.write();
+          await fs.writeFile(location, encodeURIComponent(value));
 
-          return Maybe.just(`Memory set ${key}`);
+          this.cache.set(key, value);
+
+          this.length.set(key, value.length);
+
+          // Sum of all document lengths
+          const lengths = Array.from(this.length.values()).reduce((a, b) => a + b, 0);
+
+          const response = `[memory: append] +${value.length} characters added to "${key}" (${lengths} characters in ${this.length.size} documents)`;
+
+          console.log(response);
+
+          return Maybe.just(response);
      }
 
-     get(key: string): Maybe<string> {
+     async get(context: string): Promise<Maybe<string>> {
 
-          return Maybe.string(
-               this.storage.has(key) ? `${key}: ${this.storage.get(key)}` : `Key ${key} not found`
-          );
-     }
+          const segments = Array.from(this.cache.entries()).map(entry => `${entry[0]}: ${entry[1]}`);
 
-     read() {
+          const search = new SemanticSearch(segments);
 
-          return Maybe.string(this.storage.entries());
-     }
+          const results = search.search(context, 5)
+               .filter(result => result.similarity >= 0.5)
+               .map(result => result.section);
 
-     private async write() {
+          const response = `[memory: recall] ${results.join("\n")}`;
 
-          if (!this.file) return;
-
-          await fs.writeFile(this.file, yaml.stringify(this.storage.entries()));
+          return Maybe.just(response);
 
      }
 
-     public static async fromFile(file: string) {
 
-          const storage = await fs.readFile(file, 'utf-8');
-
-          const map = new Map(
-               storage ? yaml.parse(storage) : []
-          ) as Map<string, string>;
-
-          return new Memory(map, file);
-
-     }
 }

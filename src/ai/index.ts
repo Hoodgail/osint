@@ -113,7 +113,7 @@ export async function final(results: {
      functionName: string;
      error?: string;
      result?: Maybe<string>;
-}[]) {
+}[], memorySegment: Maybe<string>) {
 
      const segments: string[] = [];
 
@@ -142,6 +142,7 @@ export async function final(results: {
      const response = await cloudflare.workers.ai.run("@cf/mistral/mistral-7b-instruct-v0.1", {
           messages: [
                { role: "system", content: system },
+               { role: "user", content: `<memory>\n${memorySegment.getOrElse("No memory")}\n</memory>` },
                { role: "user", content: segments.join("\n\n") }
           ],
           max_tokens: 256,
@@ -168,12 +169,12 @@ export async function processAI(options: {
 
      try {
 
-          const system = `Your memory:\n${memory.read().getOrElse("Memory is empty")}`
+          const memorySegment = await memory.get(options.input);
 
           const response = await cloudflare.workers.ai.run("@hf/nousresearch/hermes-2-pro-mistral-7b", {
                messages: [{
                     role: "system",
-                    content: system
+                    content: "Assist the user based on their request using the available tools. Keep responses clear and relevant."
                }, {
                     role: "user",
                     content: options.input
@@ -185,7 +186,30 @@ export async function processAI(options: {
 
           let calls = "tool_calls" in response ? response.tool_calls as ToolCall | ToolCall[] : void 0;
 
-          if (!calls) return 'No tool calls found in the response.';
+          if (!calls) {
+
+               const response = await cloudflare.workers.ai.run("@cf/mistral/mistral-7b-instruct-v0.1", {
+                    messages: [
+                         { role: "system", content: system },
+                         { role: "user", content: `<memory>\n${memorySegment.getOrElse("No memory")}\n</memory>` },
+                         { role: "user", content: options.input }
+                    ],
+                    max_tokens: 256,
+                    account_id: process.env["cloudflare_id"]!,
+               })
+
+               if ("response" in response) {
+
+                    return response.response?.trim() ?? "No response";
+
+               } else {
+
+                    return "No response";
+
+               }
+
+
+          }
 
           if (!Array.isArray(calls)) calls = [calls];
 
@@ -211,7 +235,7 @@ export async function processAI(options: {
                }
           }));
 
-          const result = await final(results);
+          const result = await final(results, memorySegment);
 
           return result ?? 'No result';
 
