@@ -2,7 +2,6 @@ import yaml from 'yaml';
 import fs from 'fs/promises';
 import path from "path";
 
-import { TfIdf } from "natural"
 import { SemanticSearch } from '../utils/SemanticSearch';
 
 function isArrayOf(arr: string[], type: "string"): arr is string[];
@@ -185,15 +184,30 @@ export class Memory {
           return this;
      }
 
-     async set(key: string, value: string) {
+     async set(key: string, value: string, append: boolean = false) {
 
           const location = path.join(this.path, key);
 
-          await fs.writeFile(location, encodeURIComponent(value));
+          if (append) {
 
-          this.cache.set(key, value);
+               await fs.appendFile(location, encodeURIComponent(value));
 
-          this.length.set(key, value.length);
+               const cache = this.cache.get(key) ?? "";
+               const length = this.length.get(key) ?? 0;
+
+               this.cache.set(key, cache + value);
+
+               this.length.set(key, length + value.length);
+
+          } else {
+
+               await fs.writeFile(location, encodeURIComponent(value));
+
+               this.cache.set(key, value);
+
+               this.length.set(key, value.length);
+
+          }
 
           // Sum of all document lengths
           const lengths = Array.from(this.length.values()).reduce((a, b) => a + b, 0);
@@ -203,6 +217,27 @@ export class Memory {
           console.log(response);
 
           return Maybe.just(response);
+     }
+
+     public put(key: string, value: string, append: boolean = false) {
+
+          if (append && this.cache.has(key)) {
+
+               const cache = this.cache.get(key) ?? "";
+               const length = this.length.get(key) ?? 0;
+
+               this.cache.set(key, cache + value);
+
+               this.length.set(key, length + value.length);
+
+          } else {
+
+               this.cache.set(key, value);
+
+               this.length.set(key, value.length);
+
+          }
+
      }
 
      async get(context: string): Promise<Maybe<string>> {
@@ -215,9 +250,9 @@ export class Memory {
                .filter(result => result.similarity >= 0.5)
                .map(result => result.section);
 
-          const response = `[memory: recall] ${results.join("\n")}`;
+          if (results.length == 0) return Maybe.nothing<string>();
 
-          return Maybe.just(response);
+          return Maybe.just(results.join("\n"));
 
      }
 

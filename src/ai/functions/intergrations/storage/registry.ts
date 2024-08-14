@@ -1,5 +1,6 @@
 import type { FunctionRegistry } from "../../";
 import { memory } from ".";
+import { SchemaType } from "@google/generative-ai";
 
 export const append_memory: FunctionRegistry = {
      tool: {
@@ -8,14 +9,14 @@ export const append_memory: FunctionRegistry = {
                name: 'append_memory',
                description: 'Appends or updates a detailed value in the system\'s memory, associated with a specific key',
                parameters: {
-                    type: 'object',
+                    type: SchemaType.OBJECT,
                     properties: {
                          key: {
-                              type: 'string',
+                              type: SchemaType.STRING,
                               description: 'The unique identifier or contextual key under which the value will be stored. This could be a topic, category, or any relevant identifier for easy retrieval later.',
                          },
                          value: {
-                              type: 'string',
+                              type: SchemaType.STRING,
                               description: 'The detailed information to be stored in memory. This should be a comprehensive and well-structured description, potentially including context, relationships, or any other relevant details that would be valuable for future recall and use.',
                          },
                     },
@@ -35,10 +36,10 @@ export const recall_memory: FunctionRegistry = {
                name: 'recall_memory',
                description: 'Retrieves a stored value from the system\'s memory based on a given context or key',
                parameters: {
-                    type: 'object',
+                    type: SchemaType.OBJECT,
                     properties: {
                          context: {
-                              type: 'string',
+                              type: SchemaType.STRING,
                               description: 'The unique identifier or contextual key associated with the memory to be retrieved. This could be a specific topic, category, or any relevant identifier used when the memory was initially stored.',
                          },
                     },

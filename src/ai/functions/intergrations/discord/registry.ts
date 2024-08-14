@@ -3,6 +3,7 @@ import type { FunctionRegistry } from '../../../functions';
 
 import * as discord from '.';
 import { Maybe } from '../../../../monads';
+import { SchemaType } from '@google/generative-ai';
 
 export const get_discord_guilds: FunctionRegistry = {
   tool: {
@@ -11,7 +12,7 @@ export const get_discord_guilds: FunctionRegistry = {
       name: 'get_discord_guilds',
       description: 'Get an array of guild discord names that the user is in',
       parameters: {
-        type: 'object',
+        type: SchemaType.OBJECT,
         properties: {},
         required: [],
       },
@@ -27,10 +28,10 @@ export const get_discord_guild: FunctionRegistry = {
       name: 'get_discord_guild_channels',
       description: 'Get the channels of a specific discord guild',
       parameters: {
-        type: 'object',
+        type: SchemaType.OBJECT,
         properties: {
           guild_name: {
-            type: 'string',
+            type: SchemaType.STRING,
             description: 'The name of the guild',
           },
         },
@@ -48,7 +49,7 @@ export const get_discord_direct_messages: FunctionRegistry = {
       name: 'get_discord_direct_messages',
       description: 'Get an array of discord direct message channel names',
       parameters: {
-        type: 'object',
+        type: SchemaType.OBJECT,
         properties: {},
         required: [],
       },
@@ -64,7 +65,7 @@ export const get_discord_unread_messages: FunctionRegistry = {
       name: 'get_discord_unread_messages',
       description: 'Get discord unread mentions, ignoring @everyone and @here',
       parameters: {
-        type: 'object',
+        type: SchemaType.OBJECT,
         properties: {},
         required: [],
       },
@@ -80,35 +81,35 @@ export const get_discord_messages: FunctionRegistry = {
       name: 'get_discord_messages',
       description: 'Get discord messages from a specific channel',
       parameters: {
-        type: 'object',
+        type: SchemaType.OBJECT,
         properties: {
           channel_name: {
-            type: 'string',
+            type: SchemaType.STRING,
             description: 'The name of the channel (starts with @ for DMs, # for guild channels)',
           },
           limit: {
-            type: 'number',
+            type: SchemaType.NUMBER,
             description: 'The maximum number of messages to retrieve',
           },
           mentioned: {
-            type: 'boolean',
+            type: SchemaType.BOOLEAN,
             description: 'Whether to filter for messages that mention the user',
           },
           before: {
-            type: 'string',
+            type: SchemaType.STRING,
             description: 'Get messages before this message ID',
           },
           after: {
-            type: 'string',
+            type: SchemaType.STRING,
             description: 'Get messages after this message ID',
           },
           has: {
-            type: 'string',
+            type: SchemaType.STRING,
             enum: ['link', 'embed', 'file', 'image', 'video', 'audio'],
             description: 'Filter messages that have a specific type of content',
           },
           mentions: {
-            type: 'string',
+            type: SchemaType.STRING,
             description: 'Array of usernames to filter mentions (comma separated)',
           },
         },
@@ -134,14 +135,14 @@ export const send_discord_message: FunctionRegistry = {
       name: 'send_discord_message',
       description: 'Send a message to a specific channel',
       parameters: {
-        type: 'object',
+        type: SchemaType.OBJECT,
         properties: {
           channel_name: {
-            type: 'string',
+            type: SchemaType.STRING,
             description: 'The name of the channel (starts with @ for DMs, # for guild channels)',
           },
           content: {
-            type: 'string',
+            type: SchemaType.STRING,
             description: 'The content of the message to send',
           },
         },

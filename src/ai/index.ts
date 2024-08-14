@@ -1,11 +1,18 @@
 import Cloudflare from 'cloudflare';
-import type { Maybe } from '../monads';
+import type { Maybe, Memory } from '../monads';
 import fs from 'fs';
 import { memory } from './functions/intergrations/storage';
+
+import {
+     GoogleGenerativeAI,
+     SchemaType,
+} from "@google/generative-ai"
 
 if (!process.env.cloudflare_id) throw new Error("Cloudflare ID not set");
 if (!process.env.cloudflare_key) throw new Error("Cloudflare API key not set");
 if (!process.env.cloudflare_email) throw new Error("Cloudflare email not set");
+
+const service: "cloudflare" | "google" = "cloudflare";
 
 const system = fs.readFileSync("./src/ai/prompts/final.md", "utf8");
 
@@ -14,15 +21,21 @@ export const cloudflare = new Cloudflare({
      apiKey: process.env['cloudflare_key'],
 });
 
+export const google = new GoogleGenerativeAI(
+     process.env['google_key'] as string,
+);
+
+
+
 // Types for the API
 export type ParameterProperty = {
-     type: string;
+     type: SchemaType;
      description: string;
      enum?: string[];
 };
 
 export type Parameters = {
-     type: string;
+     type: SchemaType;
      properties: {
           [key: string]: ParameterProperty;
      };
@@ -32,7 +45,7 @@ export type Parameters = {
 export type Function = {
      name: string;
      description: string;
-     parameters: Parameters;
+     parameters?: Parameters;
 };
 
 export type AvailableTool = {
@@ -108,12 +121,29 @@ export async function prompt(options: {
      }
 }
 
+const model = google.getGenerativeModel({
+     model: "gemini-1.5-pro-exp-0801",
+     systemInstruction: system,
+});
+
+const tools = google.getGenerativeModel({
+     model: "gemini-1.5-pro-exp-0801",
+     systemInstruction: "Assist the user based on their request using the available tools. Keep responses clear and relevant.",
+});
+
+const generationConfig = {
+     temperature: 1,
+     topP: 0.95,
+     topK: 64,
+     maxOutputTokens: 8192,
+     responseMimeType: "text/plain",
+};
 
 export async function final(results: {
      functionName: string;
      error?: string;
      result?: Maybe<string>;
-}[], memorySegment: Maybe<string>) {
+}[], input: string, memorySegment: Maybe<string>, context?: Maybe<string>) {
 
      const segments: string[] = [];
 
@@ -133,43 +163,80 @@ export async function final(results: {
                continue;
           }
 
-          segments.push(`-----[${functionName}]\n${result.getOrElse("No result")}\n-----`);
+          segments.push(`<${functionName}>\n${result.getOrElse("No result")}</${functionName}>`);
 
      };
 
-     // return segments.join("\n\n");
+     segments.push(`<memory-recall>\n${memorySegment.getOrElse("No memory\n")}</memory-recall>`);
 
-     const response = await cloudflare.workers.ai.run("@cf/mistral/mistral-7b-instruct-v0.1", {
-          messages: [
-               { role: "system", content: system },
-               { role: "user", content: `<memory>\n${memorySegment.getOrElse("No memory")}\n</memory>` },
-               { role: "user", content: segments.join("\n\n") }
-          ],
-          max_tokens: 256,
-          account_id: process.env["cloudflare_id"]!,
-     })
+     if (context) segments.push(`<context>\n${context.getOrElse("No context\n")}</context>`);
 
-     if ("response" in response) {
+     if (service == "cloudflare") {
 
-          return response.response?.trim();
+          const response = await cloudflare.workers.ai.run("@hf/meta-llama/meta-llama-3-8b-instruct", {
+               messages: [
+                    { role: "system", content: system },
+                    // { role: "user", content: `<memory>\n${memorySegment.getOrElse("No memory")}\n</memory>` },
+                    { role: "user", content: segments.join("\n") },
+                    { role: "user", content: input }
+               ],
+               max_tokens: 256,
+               account_id: process.env["cloudflare_id"]!,
+          })
 
+          if ("response" in response) {
+
+               return response.response?.trim();
+
+          }
+
+     } else if (service == "google") {
+
+          const chatSession = model.startChat({
+               generationConfig,
+               history: [
+                    {
+                         role: "user",
+                         parts: [
+                              { text: segments.join("\n") }
+                         ],
+                    },
+               ],
+          });
+
+          const result = await chatSession.sendMessage(input);
+
+          return result.response.text()
      }
 
      return null;
 }
 
+export async function summarize(content: string) {
 
-// Function to process input and generate output
-export async function processAI(options: {
-     context?: string,
-     input: string,
-     tools: AvailableTool[],
-     registry: FunctionRegistry
-}): Promise<string> {
+     const response = await cloudflare.workers.ai.run("@cf/facebook/bart-large-cnn", {
+          input_text: content,
+          max_length: 200,
+          account_id: process.env.cloudflare_id || "",
+     });
 
-     try {
+     if ("summary" in response) {
 
-          const memorySegment = await memory.get(options.input);
+          if (response.summary) return response.summary;
+
+          throw new Error("No summary found");
+
+     } else {
+
+          throw new Error("No summary found");
+
+     }
+
+}
+
+export async function processFunctions(functions: AvailableTool[], input: string): Promise<ToolCall[] | null> {
+
+     if (service == "cloudflare") {
 
           const response = await cloudflare.workers.ai.run("@hf/nousresearch/hermes-2-pro-mistral-7b", {
                messages: [{
@@ -177,41 +244,139 @@ export async function processAI(options: {
                     content: "Assist the user based on their request using the available tools. Keep responses clear and relevant."
                }, {
                     role: "user",
-                    content: options.input
+                    content: input
                }],
-               tools: options.tools,
+               tools: functions,
                max_tokens: 1024,
                account_id: process.env.cloudflare_id || "",
           });
 
-          let calls = "tool_calls" in response ? response.tool_calls as ToolCall | ToolCall[] : void 0;
+          const calls = "tool_calls" in response ? response.tool_calls as ToolCall | ToolCall[] : void 0;
+
+          if (!calls) return null;
+
+          else if (!Array.isArray(calls)) return [calls];
+
+          else return calls;
+
+     } else if (service == "google") {
+
+          const session = tools.startChat({
+               generationConfig,
+               tools: functions.map(tool => {
+
+                    return {
+                         functionDeclarations: [{
+                              name: tool.function.name,
+                              description: tool.function.description,
+                              parameters: (!tool.function.parameters || Object.keys(tool.function.parameters).length === 0) ? undefined : tool.function.parameters,
+                         }]
+                    }
+
+               }),
+               history: [
+                    {
+                         role: "user",
+                         parts: [{ text: input }],
+                    },
+               ]
+          });
+
+
+          const result = await session.sendMessage(input);
+
+          const calls = result.response.functionCalls();
+
+          if (!calls) return null;
+
+          return calls.map(call => {
+
+               return {
+                    name: call.name,
+                    arguments: call.args as {
+                         [key: string]: string;
+                    },
+               }
+
+          })
+     }
+
+     return null;
+}
+
+// Function to process input and generate output
+export async function processAI(options: {
+     context?: Maybe<string>,
+     input: string,
+     tools: AvailableTool[],
+     registry: FunctionRegistry,
+     memory?: Memory
+}): Promise<string | null> {
+
+     try {
+
+          const memorySegment = await (options.memory ?? memory).get(options.input);
+
+          const calls = await processFunctions(options.tools, options.input);
 
           if (!calls) {
 
-               const response = await cloudflare.workers.ai.run("@cf/mistral/mistral-7b-instruct-v0.1", {
-                    messages: [
-                         { role: "system", content: system },
-                         { role: "user", content: `<memory>\n${memorySegment.getOrElse("No memory")}\n</memory>` },
-                         { role: "user", content: options.input }
-                    ],
-                    max_tokens: 256,
-                    account_id: process.env["cloudflare_id"]!,
-               })
+               const segments: string[] = [];
 
-               if ("response" in response) {
+               segments.push(`-----[memory: recall]\n${memorySegment.getOrElse("No memory")}\n-----`);
 
-                    return response.response?.trim() ?? "No response";
+               if (options.context) segments.push(`-----[context]\n${options.context.getOrElse("No context")}\n-----`);
+
+               if (service == "cloudflare") {
+
+                    const response = await cloudflare.workers.ai.run("@hf/meta-llama/meta-llama-3-8b-instruct", {
+                         messages: [
+                              { role: "system", content: system },
+                              { role: "system", content: segments.join("\n\n") },
+                              { role: "user", content: options.input }
+                         ],
+                         max_tokens: 256,
+                         account_id: process.env["cloudflare_id"]!,
+                    })
+
+                    if ("response" in response) {
+
+                         return response.response?.trim() ?? null;
+
+                    } else {
+
+                         return null;
+
+                    }
+
+               } else if (service == "google") {
+
+                    const chatSession = model.startChat({
+                         generationConfig,
+                         history: [
+                              {
+                                   role: "user",
+                                   parts: [
+                                        { text: segments.join("\n") },
+                                   ],
+                              },
+                         ],
+                    });
+
+                    const result = await chatSession.sendMessage(options.input);
+
+                    return result.response.text()
 
                } else {
 
-                    return "No response";
+                    return null;
 
                }
 
 
           }
 
-          if (!Array.isArray(calls)) calls = [calls];
+
 
           console.log("[tool_calls]", calls.map(call => call.name));
 
@@ -235,13 +400,15 @@ export async function processAI(options: {
                }
           }));
 
-          const result = await final(results, memorySegment);
+          const result = await final(results, options.input, memorySegment, options.context);
 
-          return result ?? 'No result';
+          return result ?? null
 
      } catch (error) {
+
           console.error('Error processing function calling:', error);
-          return 'An error occurred while processing the function calling.';
+
+          return null;
      }
 }
 

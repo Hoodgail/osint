@@ -2,6 +2,7 @@ import { type AvailableTool } from "..";
 import { Maybe } from "../../monads";
 import { getGithubProfile } from "../../socials/github/profile";
 import type { FunctionType } from "../../ai";
+import { SchemaType } from "@google/generative-ai";
 
 enum TemperatureUnit {
      Celsius = 'celsius',
@@ -23,14 +24,14 @@ export const get_current_weather: FunctionRegistry = {
                name: 'get_current_weather',
                description: 'Get the current weather',
                parameters: {
-                    type: 'object',
+                    type: SchemaType.OBJECT,
                     properties: {
                          location: {
-                              type: 'string',
+                              type: SchemaType.STRING,
                               description: 'The city and state, e.g. San Francisco, CA',
                          },
                          format: {
-                              type: 'string',
+                              type: SchemaType.STRING,
                               enum: [TemperatureUnit.Celsius, TemperatureUnit.Fahrenheit],
                               description: 'The temperature unit to use. Infer this from the users location.',
                          },
@@ -62,10 +63,10 @@ export const get_github_profile: FunctionRegistry = {
                name: 'get_github_profile',
                description: 'Get a github profile data',
                parameters: {
-                    type: 'object',
+                    type: SchemaType.OBJECT,
                     properties: {
                          username: {
-                              type: 'string',
+                              type: SchemaType.STRING,
                               description: 'The github username',
                          },
                     },
@@ -89,10 +90,10 @@ export const search_username: FunctionRegistry = {
                name: 'search_username',
                description: 'Search for a username accross all social media platforms on the internet, heavy task.',
                parameters: {
-                    type: 'object',
+                    type: SchemaType.OBJECT,
                     properties: {
                          query: {
-                              type: 'string',
+                              type: SchemaType.STRING,
                               description: 'The query to search for',
                          },
                     },

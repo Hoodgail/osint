@@ -23,7 +23,7 @@ const API_BASE_URL = 'https://discord.com/api/v10';
 const api = axios.create({
      baseURL: API_BASE_URL,
      headers: {
-          'Authorization': `${process.env.discord_token}`,
+          'Authorization': `Bot ${process.env.discord_token}`,
           'Content-Type': 'application/json',
      },
 });
@@ -206,11 +206,15 @@ async function getChannelId(channel_name: string): Promise<string | null> {
           // DM channel
           const handle = channel_name.slice(1).toLowerCase();
 
-          const direct_messages = await cacher.create('direct_messages', getChannels)
+          const direct_messages = await cacher.create('direct_messages', async () => {
 
-          const channels = direct_messages.getOrElse([]);
+               const channels = await getChannels();
 
-          let channel = channels.find(channel => {
+               return channels.getOrElse([]);
+
+          })
+
+          let channel = direct_messages.find(channel => {
 
                if (channel.type !== 1) return false;
 
@@ -231,7 +235,7 @@ async function getChannelId(channel_name: string): Promise<string | null> {
 
           if (!channel) {
 
-               const scores = channels.map((channel, index) => {
+               const scores = direct_messages.map((channel, index) => {
 
                     if (channel.type !== 1) return [index, 0];
 
@@ -247,11 +251,13 @@ async function getChannelId(channel_name: string): Promise<string | null> {
 
                });
 
+               if (scores.length === 0) return null;
+
                const [[index, score]] = scores.sort((a, b) => b[1] - a[1]) as [index: number, score: number][];
 
                if (+score.toFixed(1) < nlu_tolerance) return null;
 
-               channel = channels[index];
+               channel = direct_messages[index];
           }
 
           return channel.id
@@ -261,7 +267,7 @@ async function getChannelId(channel_name: string): Promise<string | null> {
           // Guild channel
           const handle = channel_name.slice(1).toLowerCase();
 
-          const guilds = await cacher.create('guilds', get_guilds);
+          const guilds = await get_guilds();
 
           let bestMatch: { channel: string; score: number } | null = null;
 
