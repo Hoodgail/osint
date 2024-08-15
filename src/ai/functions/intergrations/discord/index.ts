@@ -5,6 +5,7 @@ import type { APIChannel } from 'discord-api-types/v9';
 
 import { JaroWinklerDistance } from "natural"
 import { discord } from '../../../../discord';
+import { ChannelType } from 'discord.js';
 
 const nlu_tolerance = 0.7;
 
@@ -41,6 +42,7 @@ export async function get_guild_channels(guild_name: string): Promise<Maybe<[id:
                const guilds = await get_guilds();
 
                return await guilds.flatMap(async (list) => {
+
                     // Find the best matching guild using JaroWinklerDistance
                     const guildScores = list.map(([id, name]) => ({
                          id,
@@ -59,9 +61,12 @@ export async function get_guild_channels(guild_name: string): Promise<Maybe<[id:
 
                     console.log(`Using guild "${bestMatch.name}" (match score: ${bestMatch.score.toFixed(2)})`);
 
-                    const response: AxiosResponse<any[]> = await api.get(`/guilds/${bestMatch.id}/channels`);
+                    const guild = await discord.guilds.fetch({ guild: bestMatch.id, cache: true });
 
-                    return Maybe.just(response.data.map(channel => [channel.id, channel.name]));
+                    const channels = await guild.channels.fetch(void 0, { cache: true });
+
+                    return Maybe.just(Array.from(channels.values()).filter(e => e).map(channel => [channel!.id, channel!.name]));
+
                }) as Maybe<[id: string, name: string][]>;
 
           } catch (error) {
@@ -73,35 +78,14 @@ export async function get_guild_channels(guild_name: string): Promise<Maybe<[id:
 // Function to get direct messages
 export async function get_direct_messages(): Promise<Maybe<string[]>> {
 
-     const direct_messages = await cacher.create('direct_messages', getChannels)
+     const direct_messages = Array.from(discord.channels.cache.filter(channel => channel.type === ChannelType.DM).values());
 
      return Maybe.just(
 
-          direct_messages.getOrElse([])
-
-               .filter(channel => channel.type === 1)
-
-               .map(channel => channel.recipients?.[0].username.toLowerCase() ?? "unknown")
+          direct_messages.map(channel => channel.recipient?.username.toLowerCase() ?? "unknown")
 
      );
 
-}
-
-// Function to get unread messages
-export async function get_unread_messages(): Promise<Maybe<string[]>> {
-     return cacher.create('unread_messages', async () => {
-          try {
-               const response: AxiosResponse<any[]> = await api.get('/users/@me/mentions', {
-                    params: { limit: 100 }
-               });
-               return Maybe.just(response.data
-                    .filter(mention => !mention.mention_everyone && !mention.mention_here)
-                    .map(mention => `${mention.author.username}: ${mention.content}`));
-          } catch (error) {
-               console.error('Error fetching unread messages:', error);
-               return Maybe.nothing<string[]>();
-          }
-     });
 }
 
 // Function to get messages
@@ -113,7 +97,7 @@ export async function get_messages(options: {
      after?: string,
      has?: "link" | "embed" | "file" | "image" | "video" | "audio",
      mentions?: string
-}): Promise<Maybe<any[]>> {
+}): Promise<Maybe<string[][]>> {
      const channelId = await getChannelId(options.channel_name);
 
      if (!channelId) {
@@ -133,14 +117,35 @@ export async function get_messages(options: {
      }
 
      try {
-          const response: AxiosResponse<any[]> = await api.get(`/channels/${channelId}/messages`, { params });
-          let messages = response.data;
 
-          if (options.mentioned) {
-               messages = messages.filter(msg => msg.mentions.some((mention: any) => mention.id === process.env.discord_id));
+          const channel = await discord.channels.fetch(channelId, { cache: true })
+
+          if (channel?.isTextBased()) {
+
+               let messages = await channel.messages.fetch({
+                    cache: true,
+                    limit: options.limit,
+                    ...(options.before && { before: options.before }),
+                    ...(options.after && { after: options.after }),
+                    ...(options.has && { has: options.has }),
+                    ...(options.mentions && { mentions: options.mentions })
+               });
+
+               if (options.mentioned) {
+
+                    messages = messages.filter(msg => msg.mentions.has(process.env.discord_id as string));
+               }
+
+               const result = messages.map(e => {
+                    return [e.id, e.content]
+               })
+
+               return Maybe.just(result);
           }
 
-          return Maybe.just(messages);
+          return Maybe.nothing<any[]>();
+
+
      } catch (error) {
           console.error('Error fetching messages:', error);
           return Maybe.nothing<any[]>();
@@ -149,87 +154,77 @@ export async function get_messages(options: {
 
 // Function to send a message
 export async function send_message(options: { channel_name: string, content: string }): Promise<Maybe<string>> {
+
      const channelId = await getChannelId(options.channel_name);
+
      if (!channelId) {
+
           return Maybe.nothing<string>();
      }
 
      try {
 
-          const response: AxiosResponse<any> = await api.post(`/channels/${channelId}/messages`, {
-               content: options.content
-          });
+          const channel = await discord.channels.fetch(channelId, { cache: true })
 
-          return Maybe.just(response.data.id ?? "Failed to send message");
+          if (channel?.isTextBased()) {
+
+               await channel.send(options.content);
+
+               return Maybe.just("Message sent successfully");
+          }
+
+          return Maybe.just("Failed to send message, channel is not text based");
 
      } catch (error) {
           console.error('Error sending message:', error);
-          return Maybe.nothing<string>();
-     }
-}
-
-async function getChannels(): Promise<Maybe<APIChannel[]>> {
-     try {
-          const response: AxiosResponse<APIChannel[]> = await api.get('/users/@me/channels');
-          return Maybe.just(response.data);
-     } catch (error) {
-          console.error('Error fetching direct messages:', error);
-          return Maybe.nothing<APIChannel[]>();
+          return Maybe.just("Failed to send message");
      }
 }
 
 // Helper function to get channel ID from channel name
 async function getChannelId(channel_name: string): Promise<string | null> {
 
+
      if (channel_name.startsWith('@')) {
 
           // DM channel
           const handle = channel_name.slice(1).toLowerCase();
 
-          const direct_messages = await cacher.create('direct_messages', async () => {
+          let channel = discord.channels.cache.find(channel => {
 
-               const channels = await getChannels();
+               if (channel.type !== ChannelType.DM) return false;
 
-               return channels.getOrElse([]);
+               if (!channel.recipient) return false;
 
-          })
+               const user = channel.recipient.username.toLowerCase();
 
-          let channel = direct_messages.find(channel => {
+               const global_name = channel.recipient.username.toLowerCase();
 
-               if (channel.type !== 1) return false;
-
-               return channel.recipients?.some((recipient) => {
-
-                    const user = recipient.username.toLowerCase();
-
-                    const global_name = recipient.username.toLowerCase();
-
-                    return user === handle || global_name === handle ||
-                         user.startsWith(handle) || global_name.startsWith(handle) ||
-                         user.endsWith(handle) || global_name.endsWith(handle) ||
-                         user.includes(handle) || global_name.includes(handle);
-
-               })
-
+               return user === handle || global_name === handle ||
+                    user.startsWith(handle) || global_name.startsWith(handle) ||
+                    user.endsWith(handle) || global_name.endsWith(handle) ||
+                    user.includes(handle) || global_name.includes(handle);
           });
+
+          const channels = Array.from(discord.channels.cache.values())
 
           if (!channel) {
 
-               const scores = direct_messages.map((channel, index) => {
+               const scores = channels.map((channel, index) => {
 
-                    if (channel.type !== 1) return [index, 0];
+                    if (channel.type !== ChannelType.DM) return [index, 0];
 
-                    if (!channel.recipients) return [index, 0];
+                    if (!channel.recipient) return [index, 0];
 
-                    const username = channel.recipients[0].username.toLowerCase();
-                    const global_name = channel.recipients[0].username.toLowerCase();
+                    const username = channel.recipient.username.toLowerCase();
+                    const global_name = channel.recipient.username.toLowerCase();
 
                     let username_score = JaroWinklerDistance(username, handle);
                     let global_name_score = JaroWinklerDistance(global_name, handle);
 
-                    return [index, Math.max(username_score, global_name_score)];
+                    return [index, Math.max(username_score, global_name_score)]
 
-               });
+               }) as [index: number, score: number][];
 
                if (scores.length === 0) return null;
 
@@ -237,7 +232,7 @@ async function getChannelId(channel_name: string): Promise<string | null> {
 
                if (+score.toFixed(1) < nlu_tolerance) return null;
 
-               channel = direct_messages[index];
+               channel = channels[index];
           }
 
           return channel.id
