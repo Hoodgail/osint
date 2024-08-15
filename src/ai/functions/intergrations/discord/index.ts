@@ -1,7 +1,4 @@
-import axios, { type AxiosResponse } from 'axios';
 import { Maybe, Cache } from '../../../../monads';
-import type { APIGuild } from 'discord-api-types/v10';
-import type { APIChannel } from 'discord-api-types/v9';
 
 import { JaroWinklerDistance } from "natural"
 import { discord } from '../../../../discord';
