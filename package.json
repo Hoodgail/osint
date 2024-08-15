@@ -3,6 +3,7 @@
   "module": "index.ts",
   "type": "module",
   "devDependencies": {
+    "@gradio/client": "^1.5.0",
     "@types/bun": "latest",
     "@types/string-similarity": "^4.0.2"
   },

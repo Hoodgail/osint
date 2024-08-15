@@ -1,5 +1,7 @@
 import Cloudflare from 'cloudflare';
 import OpenAI from "openai";
+import { Client as Gradio } from "@gradio/client";
+
 import type { Maybe, Memory } from '../monads';
 import fs from 'fs';
 import { memory } from './functions/intergrations/storage';
@@ -13,7 +15,9 @@ if (!process.env.cloudflare_id) throw new Error("Cloudflare ID not set");
 if (!process.env.cloudflare_key) throw new Error("Cloudflare API key not set");
 if (!process.env.cloudflare_email) throw new Error("Cloudflare email not set");
 
-const service: "cloudflare" | "google" | "openai" = "cloudflare";
+const service: "cloudflare" | "google" | "openai" | "gradio" = "cloudflare";
+
+// if (service == "gradio") throw new Error("Gradio not supported yet");
 
 const system = fs.readFileSync("./src/ai/prompts/final.md", "utf8");
 
@@ -25,8 +29,10 @@ export const cloudflare = new Cloudflare({
 const openai = new OpenAI({ baseURL: "https://models.inference.ai.azure.com", apiKey: process.env.github_key as string });
 
 export const google = new GoogleGenerativeAI(
-     process.env['google_key'] as string,
+     process.env['google_key'] as string
 );
+
+const gradio: Gradio | null = null;
 
 // Types for the API
 export type ParameterProperty = {
@@ -224,6 +230,15 @@ export async function final(results: {
 
           return response.choices[0].message.content;
 
+     } else if (service == "gradio" && gradio) {
+
+          const result = await gradio.predict("/chat", {
+               message: `${segments.join("\n")}\n${input}`,
+               system_message: system
+          });
+
+          return result.data as string;
+
      }
 
      return null;
@@ -253,7 +268,7 @@ export async function summarize(content: string) {
 
 export async function processFunctions(functions: AvailableTool[], input: string): Promise<ToolCall[] | null> {
 
-     if (service == "cloudflare") {
+     if (service == "cloudflare" || service == "gradio") {
 
           const response = await cloudflare.workers.ai.run("@hf/nousresearch/hermes-2-pro-mistral-7b", {
                messages: [{
@@ -425,6 +440,15 @@ export async function processAI(options: {
                     const result = await chatSession.sendMessage(options.input);
 
                     return result.response.text()
+
+               } else if (service == "gradio" && gradio) {
+
+                    const result = await gradio.predict("/chat", {
+                         message: `${segments.join("\n")}\n${options.input}`,
+                         system_message: system
+                    });
+
+                    return result.data as string;
 
                } else {
 
