@@ -58,21 +58,7 @@ export const get_discord_direct_messages: FunctionRegistry = {
   call: () => Maybe.string(discord.get_direct_messages())
 };
 
-export const get_discord_unread_messages: FunctionRegistry = {
-  tool: {
-    type: 'function',
-    function: {
-      name: 'get_discord_unread_messages',
-      description: 'Get discord unread mentions, ignoring @everyone and @here',
-      parameters: {
-        type: SchemaType.OBJECT,
-        properties: {},
-        required: [],
-      },
-    },
-  },
-  call: () => Maybe.string(discord.get_unread_messages())
-};
+
 
 export const get_discord_messages: FunctionRegistry = {
   tool: {
@@ -151,4 +137,85 @@ export const send_discord_message: FunctionRegistry = {
     },
   },
   call: (options: { channel_name: string, content: string }) => discord.send_message(options).then(result => result.isEmpty() ? Maybe.just("Failed to send message") : Maybe.just("Sent message successfully"))
+};
+
+export const get_guild_members: FunctionRegistry = {
+  tool: {
+    type: 'function',
+    function: {
+      name: 'get_guild_members',
+      description: 'Get all members of a specific Discord guild',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          guild_name: {
+            type: SchemaType.STRING,
+            description: 'The name of the guild',
+          },
+        },
+        required: ['guild_name'],
+      },
+    },
+  },
+  call: ({ guild_name }: { guild_name: string }) => Maybe.string(discord.get_guild_members(guild_name))
+};
+
+export const search_messages: FunctionRegistry = {
+  tool: {
+    type: 'function',
+    function: {
+      name: 'search_messages',
+      description: 'Search for messages containing specific keywords in a Discord channel',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          channel_name: {
+            type: SchemaType.STRING,
+            description: 'The name of the channel (starts with @ for DMs, # for guild channels)',
+          },
+          keywords: {
+            type: SchemaType.ARRAY,
+            // items: { type: SchemaType.STRING },
+            description: 'Array of keywords to search for',
+          },
+          limit: {
+            type: SchemaType.NUMBER,
+            description: 'The maximum number of messages to search through',
+          },
+          case_sensitive: {
+            type: SchemaType.BOOLEAN,
+            description: 'Whether the search should be case-sensitive',
+          },
+        },
+        required: ['channel_name', 'keywords', 'limit'],
+      },
+    },
+  },
+  call: (options: {
+    channel_name: string,
+    keywords: string[],
+    limit: number,
+    case_sensitive?: boolean
+  }) => Maybe.string(discord.search_messages(options))
+};
+
+export const get_server_stats: FunctionRegistry = {
+  tool: {
+    type: 'function',
+    function: {
+      name: 'get_server_stats',
+      description: 'Get statistics for a specific Discord server',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          guild_name: {
+            type: SchemaType.STRING,
+            description: 'The name of the guild',
+          },
+        },
+        required: ['guild_name'],
+      },
+    },
+  },
+  call: ({ guild_name }: { guild_name: string }) => Maybe.string(discord.get_server_stats(guild_name))
 };

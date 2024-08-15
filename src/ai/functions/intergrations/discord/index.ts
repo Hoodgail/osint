@@ -178,6 +178,108 @@ export async function send_message(options: { channel_name: string, content: str
      }
 }
 
+// Function to get all members of a guild
+export async function get_guild_members(guild_name: string): Promise<Maybe<[id: string, name: string][]>> {
+     return cacher.create(`guild_members_${guild_name}`, async () => {
+          try {
+               const guildId = await getGuildId(guild_name);
+               if (!guildId) {
+                    return Maybe.nothing<[id: string, name: string][]>();
+               }
+
+               const guild = await discord.guilds.fetch(guildId);
+               const members = await guild.members.fetch();
+
+               return Maybe.just(
+                    Array.from(members.values()).map(member => [member.id, member.user.username])
+               );
+          } catch (error) {
+               console.error('Error fetching guild members:', error);
+               return Maybe.nothing<[id: string, name: string][]>();
+          }
+     });
+}
+
+// Function to search for messages containing specific keywords
+export async function search_messages(options: {
+     channel_name: string,
+     keywords: string[],
+     limit: number,
+     case_sensitive?: boolean
+}): Promise<Maybe<[id: string, content: string, author: string][]>> {
+     const channelId = await getChannelId(options.channel_name);
+     if (!channelId) {
+          return Maybe.nothing<[id: string, content: string, author: string][]>();
+     }
+
+     try {
+          const channel = await discord.channels.fetch(channelId, { cache: true });
+          if (!channel?.isTextBased()) {
+               return Maybe.nothing<[id: string, content: string, author: string][]>();
+          }
+
+          const messages = await channel.messages.fetch({ limit: options.limit });
+          const searchRegex = new RegExp(options.keywords.join('|'), options.case_sensitive ? '' : 'i');
+
+          const matchingMessages = messages.filter(msg => searchRegex.test(msg.content));
+
+          return Maybe.just(
+               matchingMessages.map(msg => [msg.id, msg.content, msg.author.username])
+          );
+     } catch (error) {
+          console.error('Error searching messages:', error);
+          return Maybe.nothing<[id: string, content: string, author: string][]>();
+     }
+}
+
+
+// Function to get server statistics
+export async function get_server_stats(guild_name: string): Promise<Maybe<{
+     totalMembers: number,
+     onlineMembers: number,
+     totalChannels: number,
+     textChannels: number,
+     voiceChannels: number,
+     roleCount: number
+}>> {
+     try {
+          const guildId = await getGuildId(guild_name);
+          if (!guildId) {
+               return Maybe.nothing<{
+                    totalMembers: number,
+                    onlineMembers: number,
+                    totalChannels: number,
+                    textChannels: number,
+                    voiceChannels: number,
+                    roleCount: number
+               }>();
+          }
+
+          const guild = await discord.guilds.fetch(guildId);
+          const members = await guild.members.fetch();
+          const channels = await guild.channels.fetch();
+
+          return Maybe.just({
+               totalMembers: guild.memberCount,
+               onlineMembers: members.filter(member => member.presence?.status !== 'offline').size,
+               totalChannels: channels.size,
+               textChannels: channels.filter(channel => channel?.type === ChannelType.GuildText).size,
+               voiceChannels: channels.filter(channel => channel?.type === ChannelType.GuildVoice).size,
+               roleCount: guild.roles.cache.size
+          });
+     } catch (error) {
+          console.error('Error getting server stats:', error);
+          return Maybe.nothing<{
+               totalMembers: number,
+               onlineMembers: number,
+               totalChannels: number,
+               textChannels: number,
+               voiceChannels: number,
+               roleCount: number
+          }>();
+     }
+}
+
 // Helper function to get channel ID from channel name
 async function getChannelId(channel_name: string): Promise<string | null> {
 
