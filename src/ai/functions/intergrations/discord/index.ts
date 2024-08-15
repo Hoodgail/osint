@@ -4,29 +4,7 @@ import type { APIGuild } from 'discord-api-types/v10';
 import type { APIChannel } from 'discord-api-types/v9';
 
 import { JaroWinklerDistance } from "natural"
-
-
-// if (typeof process.env.discord_token === 'undefined') {
-
-//      throw new Error('Discord token not found in environment variables');
-// }
-
-// if (typeof process.env.discord_id === 'undefined') {
-
-//      throw new Error('Discord ID not found in environment variables');
-// }
-
-// API base URL and token (replace with actual values)
-const API_BASE_URL = 'https://discord.com/api/v10';
-
-// Axios instance with default configuration
-const api = axios.create({
-     baseURL: API_BASE_URL,
-     headers: {
-          'Authorization': `Bot ${process.env.discord_token}`,
-          'Content-Type': 'application/json',
-     },
-});
+import { discord } from '../../../../discord';
 
 const nlu_tolerance = 0.7;
 
@@ -40,9 +18,11 @@ export async function get_guilds(): Promise<Maybe<[id: string, name: string][]>>
 
           try {
 
-               const response: AxiosResponse<APIGuild[]> = await api.get('/users/@me/guilds');
+               const guilds = await discord.guilds.fetch({ limit: 100 })
 
-               return Maybe.just(response.data.map(guild => [guild.id, guild.name]));
+               return Maybe.just(
+                    guilds.map(guild => [guild.id, guild.name])
+               );
 
           } catch (error) {
 

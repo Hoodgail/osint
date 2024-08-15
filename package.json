@@ -19,6 +19,7 @@
     "discord.js": "^14.15.3",
     "jsdom": "^24.1.0",
     "natural": "^7.1.0",
+    "openai": "^4.55.7",
     "string-similarity": "^4.0.4",
     "yaml": "^2.4.5"
   }

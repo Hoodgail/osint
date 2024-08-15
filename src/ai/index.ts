@@ -1,4 +1,5 @@
 import Cloudflare from 'cloudflare';
+import OpenAI from "openai";
 import type { Maybe, Memory } from '../monads';
 import fs from 'fs';
 import { memory } from './functions/intergrations/storage';
@@ -12,7 +13,7 @@ if (!process.env.cloudflare_id) throw new Error("Cloudflare ID not set");
 if (!process.env.cloudflare_key) throw new Error("Cloudflare API key not set");
 if (!process.env.cloudflare_email) throw new Error("Cloudflare email not set");
 
-const service: "cloudflare" | "google" = "cloudflare";
+const service: "cloudflare" | "google" | "openai" = "cloudflare";
 
 const system = fs.readFileSync("./src/ai/prompts/final.md", "utf8");
 
@@ -21,11 +22,11 @@ export const cloudflare = new Cloudflare({
      apiKey: process.env['cloudflare_key'],
 });
 
+const openai = new OpenAI({ baseURL: "https://models.inference.ai.azure.com", apiKey: process.env.github_key as string });
+
 export const google = new GoogleGenerativeAI(
      process.env['google_key'] as string,
 );
-
-
 
 // Types for the API
 export type ParameterProperty = {
@@ -176,7 +177,6 @@ export async function final(results: {
           const response = await cloudflare.workers.ai.run("@hf/meta-llama/meta-llama-3-8b-instruct", {
                messages: [
                     { role: "system", content: system },
-                    // { role: "user", content: `<memory>\n${memorySegment.getOrElse("No memory")}\n</memory>` },
                     { role: "user", content: segments.join("\n") },
                     { role: "user", content: input }
                ],
@@ -207,6 +207,23 @@ export async function final(results: {
           const result = await chatSession.sendMessage(input);
 
           return result.response.text()
+
+     } else if (service == "openai") {
+
+          const response = await openai.chat.completions.create({
+               messages: [
+                    { role: "system", content: system },
+                    { role: "user", content: segments.join("\n") },
+                    { role: "user", content: input }
+               ],
+               model: "gpt-4o",
+               temperature: 1.,
+               max_tokens: 1000,
+               top_p: 1.
+          });
+
+          return response.choices[0].message.content;
+
      }
 
      return null;
@@ -299,6 +316,48 @@ export async function processFunctions(functions: AvailableTool[], input: string
                }
 
           })
+
+     } else if (service == "openai") {
+
+          const response = await openai.chat.completions.create({
+               messages: [{
+                    role: "system",
+                    content: "Assist the user based on their request using the available tools. Keep responses clear and relevant."
+               }, {
+                    role: "user",
+                    content: input
+               }],
+               tools: functions.map(tool => {
+                    return {
+                         type: "function",
+                         function: {
+                              name: tool.function.name,
+                              description: tool.function.description,
+                              parameters: (!tool.function.parameters || Object.keys(tool.function.parameters).length === 0) ? undefined : tool.function.parameters,
+                         }
+                    }
+               }),
+               model: "gpt-4o",
+               temperature: 1.,
+               max_tokens: 1000,
+               top_p: 1.
+          });
+
+          if (response.choices[0].finish_reason === "tool_calls") {
+
+               if (!response.choices[0].message.tool_calls) return null;
+
+               return response.choices[0].message.tool_calls.map(e => {
+                    return {
+                         name: e.function.name,
+                         arguments: JSON.parse(e.function.arguments) as {
+                              [key: string]: string;
+                         },
+                    }
+               })
+
+          }
+
      }
 
      return null;
@@ -375,8 +434,6 @@ export async function processAI(options: {
 
 
           }
-
-
 
           console.log("[tool_calls]", calls.map(call => call.name));
 
