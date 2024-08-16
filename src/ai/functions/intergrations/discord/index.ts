@@ -2,7 +2,7 @@ import { Maybe, Cache } from '../../../../monads';
 
 import { JaroWinklerDistance } from "natural"
 import { discord } from '../../../../discord';
-import { ChannelType } from 'discord.js';
+import { ChannelType, GuildMember } from 'discord.js';
 
 const nlu_tolerance = 0.7;
 
@@ -161,19 +161,29 @@ export async function send_message(options: { channel_name: string, content: str
 
      try {
 
+          if (options.channel_name.startsWith("@")) {
+
+               await discord.users.send(channelId, options.content);
+
+               return Maybe.just(`Sent "${encodeURIComponent(options.content)}" to ${options.channel_name}'s DM channel`);
+
+          }
+
           const channel = await discord.channels.fetch(channelId, { cache: true })
 
           if (channel?.isTextBased()) {
 
                await channel.send(options.content);
 
-               return Maybe.just("Message sent successfully");
+               return Maybe.just(`Sent "${encodeURIComponent(options.content)}" to ${options.channel_name}`);
           }
 
           return Maybe.just("Failed to send message, channel is not text based");
 
      } catch (error) {
+
           console.error('Error sending message:', error);
+
           return Maybe.just("Failed to send message");
      }
 }
@@ -280,49 +290,84 @@ export async function get_server_stats(guild_name: string): Promise<Maybe<{
      }
 }
 
-// Helper function to get channel ID from channel name
-async function getChannelId(channel_name: string): Promise<string | null> {
+export async function getUsers() {
 
+     const users: Map<string, {
+          id: string,
+          names: Set<string>
+     }> = new Map();
+
+     for (let guild of discord.guilds.cache.values()) {
+
+          const collection = await guild.members.fetch();
+
+          for (let member of collection.values()) {
+
+               let cache = users.get(member.user.id);
+
+               if (!cache) {
+
+                    cache = {
+                         id: member.user.id,
+                         names: new Set()
+                    }
+
+                    users.set(member.user.id, cache);
+               }
+
+               cache.names.add(member.user.username.toLowerCase());
+               cache.names.add(member.user.displayName.toLowerCase());
+
+               if (member.user.globalName) cache?.names.add(member.user.globalName.toLowerCase());
+
+          }
+     }
+
+     return Array.from(users.values());
+}
+
+// Helper function to get channel ID from channel name
+export async function getChannelId(channel_name: string): Promise<string | null> {
 
      if (channel_name.startsWith('@')) {
 
           // DM channel
           const handle = channel_name.slice(1).toLowerCase();
 
-          let channel = discord.channels.cache.find(channel => {
+          const users = await cacher.create("users", getUsers);
 
-               if (channel.type !== ChannelType.DM) return false;
+          let channel = users.find(channel => {
+               // Convert the handle to lowercase for comparison
+               const lowerCaseHandle = handle.toLowerCase();
 
-               if (!channel.recipient) return false;
+               // Create an array of lowercase names from the Set
+               const namesArray = Array.from(channel.names).map(name => name.toLowerCase());
 
-               const user = channel.recipient.username.toLowerCase();
-
-               const global_name = channel.recipient.username.toLowerCase();
-
-               return user === handle || global_name === handle ||
-                    user.startsWith(handle) || global_name.startsWith(handle) ||
-                    user.endsWith(handle) || global_name.endsWith(handle) ||
-                    user.includes(handle) || global_name.includes(handle);
+               // Check if any name in the set matches the criteria
+               return namesArray.some(name =>
+                    name === lowerCaseHandle ||
+                    name.startsWith(lowerCaseHandle) ||
+                    name.endsWith(lowerCaseHandle) ||
+                    name.includes(lowerCaseHandle)
+               );
           });
-
-          const channels = Array.from(discord.channels.cache.values())
 
           if (!channel) {
 
-               const scores = channels.map((channel, index) => {
+               const scores = users.map((channel, index) => {
+                    // Convert the handle to lowercase for comparison
+                    const lowerCaseHandle = handle.toLowerCase();
 
-                    if (channel.type !== ChannelType.DM) return [index, 0];
+                    // Convert the Set of names to an array of lowercase strings
+                    const namesArray = Array.from(channel.names).map(name => name.toLowerCase());
 
-                    if (!channel.recipient) return [index, 0];
+                    // Compute Jaro-Winkler distance for each name in the array
+                    const scoresArray = namesArray.map(name => JaroWinklerDistance(name, lowerCaseHandle));
 
-                    const username = channel.recipient.username.toLowerCase();
-                    const global_name = channel.recipient.username.toLowerCase();
+                    // Find the maximum score among all the names
+                    const maxScore = Math.max(...scoresArray);
 
-                    let username_score = JaroWinklerDistance(username, handle);
-                    let global_name_score = JaroWinklerDistance(global_name, handle);
-
-                    return [index, Math.max(username_score, global_name_score)]
-
+                    return [index, maxScore];
                }) as [index: number, score: number][];
 
                if (scores.length === 0) return null;
@@ -331,7 +376,7 @@ async function getChannelId(channel_name: string): Promise<string | null> {
 
                if (+score.toFixed(1) < nlu_tolerance) return null;
 
-               channel = channels[index];
+               channel = users[index];
           }
 
           return channel.id
@@ -397,3 +442,4 @@ async function getGuildId(guild_name: string): Promise<string | null> {
      console.log(`No guild found matching "${guild_name}". Did you mean "${bestMatch.name}"?`);
      return null;
 }
+

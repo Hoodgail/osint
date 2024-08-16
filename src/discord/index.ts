@@ -7,6 +7,7 @@ import readline from 'readline';
 
 import * as defaults from "../../src/ai/functions"
 import * as intergrations from "../../src/ai/functions/intergrations"
+import { getChannelId } from '../ai/functions/intergrations/discord';
 
 const memory = new Memory("./.discord")
 
@@ -22,7 +23,9 @@ for await (const line of readline.createInterface({
      memory.put(key, value, true);
 }
 
-function getDate(date: Date = new Date()) {
+function getDate(date: Date | null = new Date()) {
+
+     if (!date) return "N/A";
 
      const time = date.toLocaleTimeString('en-US', {
           hour: 'numeric',
@@ -87,16 +90,22 @@ export const discord = new Client({
           GatewayIntentBits.DirectMessageTyping,
           GatewayIntentBits.DirectMessages,
           GatewayIntentBits.MessageContent,
+          GatewayIntentBits.GuildMembers,
      ]
 });
 
 discord.on('ready', () => {
 
      console.log(`[Discord] ${discord.user?.tag}`);
+
+     // getChannelId("@liagdooh").then(console.log);
 });
 
 
 await discord.login(process.env.discord_token as string);
+
+
+
 
 const registry = [
      ...Object.values(defaults),
@@ -114,31 +123,39 @@ discord.on(Events.MessageCreate, async interaction => {
      // Trim the content
      let content = interaction.content.trim();
 
-     const mentionRegex = /<@!?(\d+)>/g;
+     const mentionRegex = /<@!?&?(\d+)>/g;
      const mentions = content.match(mentionRegex);
-
 
      if (mentions) {
           for (const mention of mentions) {
-               const id = mention.replace(/<@!?|>/g, '');
-               let username;
+               const id = mention.replace(/<@!?&?(\d+)>/g, '$1');
+               let replacement;
 
-               if (interaction.guild) {
-                    // For guild messages
-                    const member = await interaction.guild.members.fetch(id).catch(() => null);
-                    username = member ? member.user.username : 'Unknown User';
-               } else {
-                    // For DMs
-                    try {
-                         const user = await discord.users.fetch(id);
-                         username = user.username;
-                    } catch (error) {
-                         console.error(`Failed to fetch user ${id}: ${error}`);
-                         username = 'Unknown User';
+               try {
+                    if (mention.startsWith('<@&')) {
+                         // Role mention
+                         if (interaction.guild) {
+                              const role = await interaction.guild.roles.fetch(id);
+                              replacement = `@${role?.name ?? 'Unknown Role'}`;
+                         } else {
+                              replacement = '@Unknown Role';
+                         }
+                    } else {
+                         // User mention
+                         if (interaction.guild) {
+                              const member = await interaction.guild.members.fetch(id);
+                              replacement = `@${member.user.username}`;
+                         } else {
+                              const user = await interaction.client.users.fetch(id);
+                              replacement = `@${user.username}`;
+                         }
                     }
+               } catch (error) {
+                    console.error(`Failed to fetch entity ${id}: ${error}`);
+                    replacement = mention.startsWith('<@&') ? '@Unknown Role' : '@Unknown User';
                }
 
-               content = content.replace(mention, `@${username}`);
+               content = content.replace(mention, replacement);
           }
      }
 
@@ -179,6 +196,41 @@ discord.on(Events.MessageCreate, async interaction => {
 
                guild: interaction.guild?.name ?? "DM",
                guil_id: interaction.guild?.id ?? "DM",
+
+               sender_id: interaction.author.id,
+               sender_roles: interaction.member?.roles.cache.map(role => role.name).join(", ") ?? "N/A",
+               sender_join_date: getDate(interaction.member?.joinedAt),
+               sender_account_creation_date: getDate(interaction.author.createdAt),
+               sender_avatar_url: interaction.author.displayAvatarURL(),
+
+               channel_type: interaction.channel.type,
+               channel_topic: "topic" in interaction.channel ? interaction.channel.topic ?? "N/A" : "N/A",
+               channel_creation_date: getDate("createdAt" in interaction.channel ? interaction.channel.createdAt : null),
+
+               guild_member_count: interaction.guild?.memberCount ?? "N/A",
+               guild_creation_date: getDate(interaction.guild?.createdAt),
+               guild_owner: await interaction.guild?.fetchOwner().then(owner => owner.user.username) ?? "N/A",
+               guild_boost_level: interaction.guild?.premiumTier ?? "N/A",
+               guild_verified: interaction.guild?.verified ?? false,
+
+               last_message_content: interaction.channel.isTextBased()
+                    ? (await interaction.channel.messages.fetch({ limit: 1 })).first()?.content ?? "N/A"
+                    : "N/A",
+
+               user_permissions: interaction.member?.permissions.toArray().join(", ") ?? "N/A",
+
+               interaction_type: interaction.type,
+               client_user: interaction.client.user?.username ?? "N/A",
+               client_uptime: Math.floor(interaction.client.uptime / 1000), // in seconds
+
+               is_dm: !interaction.guild,
+               is_nsfw: "nsfw" in interaction.channel ? interaction.channel.nsfw : false,
+
+               current_voice_channel: interaction.member?.voice.channel?.name ?? "N/A",
+               voice_channel_members: interaction.member?.voice.channel?.members.size ?? 0,
+
+               presence: interaction.member?.presence?.status ?? "offline",
+               activity: interaction.member?.presence?.activities[0]?.name ?? "N/A",
           })
 
           const process = await processAI({

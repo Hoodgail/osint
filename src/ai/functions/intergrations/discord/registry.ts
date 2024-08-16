@@ -119,7 +119,7 @@ export const send_discord_message: FunctionRegistry = {
     type: 'function',
     function: {
       name: 'send_discord_message',
-      description: 'Send a message to a specific channel',
+      description: 'Send a message to a specific discordchannel',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {

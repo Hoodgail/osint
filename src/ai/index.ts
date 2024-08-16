@@ -272,9 +272,6 @@ export async function processFunctions(functions: AvailableTool[], input: string
 
           const response = await cloudflare.workers.ai.run("@hf/nousresearch/hermes-2-pro-mistral-7b", {
                messages: [{
-                    role: "system",
-                    content: "Assist the user based on their request using the available tools. Keep responses clear and relevant."
-               }, {
                     role: "user",
                     content: input
                }],
