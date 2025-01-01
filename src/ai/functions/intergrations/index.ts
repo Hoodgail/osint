@@ -1,2 +1,2 @@
 export * from './discord/registry';
-export * from './storage/registry';
+export * from './memory/registry';

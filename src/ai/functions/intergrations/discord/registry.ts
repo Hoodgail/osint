@@ -3,7 +3,8 @@ import type { FunctionRegistry } from '../../../functions';
 
 import * as discord from '.';
 import { Maybe } from '../../../../monads';
-import { SchemaType } from '@google/generative-ai';
+import { SchemaType } from '../../..';
+
 
 export const get_discord_guilds: FunctionRegistry = {
   tool: {
@@ -175,7 +176,7 @@ export const search_messages: FunctionRegistry = {
           },
           keywords: {
             type: SchemaType.ARRAY,
-            // items: { type: SchemaType.STRING },
+            items: { type: SchemaType.STRING },
             description: 'Array of keywords to search for',
           },
           limit: {

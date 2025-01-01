@@ -11,6 +11,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
     "@discordjs/rest": "^2.3.0",
     "@google/generative-ai": "^0.17.0",
     "@types/jsdom": "^21.1.7",

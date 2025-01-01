@@ -1,6 +1,8 @@
 import Cloudflare from 'cloudflare';
 import OpenAI from "openai";
 import { Client as Gradio } from "@gradio/client";
+import Anthropic from '@anthropic-ai/sdk';
+import type { Tool as AnthropicTool, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages"
 
 import type { Maybe, Memory } from '../monads';
 import fs from 'fs';
@@ -8,14 +10,16 @@ import { memory } from './functions/intergrations/storage';
 
 import {
      GoogleGenerativeAI,
-     SchemaType,
 } from "@google/generative-ai"
 
 if (!process.env.cloudflare_id) throw new Error("Cloudflare ID not set");
 if (!process.env.cloudflare_key) throw new Error("Cloudflare API key not set");
 if (!process.env.cloudflare_email) throw new Error("Cloudflare email not set");
 
-const service: "cloudflare" | "google" | "openai" | "gradio" = "cloudflare";
+type Service = "cloudflare" | "google" | "openai" | "anthropic" | "gradio";
+
+const service: Service = "openai";
+const functionService: Service = "openai";
 
 // if (service == "gradio") throw new Error("Gradio not supported yet");
 
@@ -26,18 +30,39 @@ export const cloudflare = new Cloudflare({
      apiKey: process.env['cloudflare_key'],
 });
 
-const openai = new OpenAI({ baseURL: "https://models.inference.ai.azure.com", apiKey: process.env.github_key as string });
+const anthropic = new Anthropic({
+     apiKey: process.env["anthropic_key"]
+});
 
 export const google = new GoogleGenerativeAI(
      process.env['google_key'] as string
 );
+const openai = new OpenAI({});
+
 
 const gradio: Gradio | null = null;
+
+export enum SchemaType {
+     /** String type. */
+     STRING = "string",
+     /** Number type. */
+     NUMBER = "number",
+     /** Integer type. */
+     INTEGER = "integer",
+     /** Boolean type. */
+     BOOLEAN = "boolean",
+     /** Array type. */
+     ARRAY = "array",
+     /** Object type. */
+     OBJECT = "object"
+}
+
 
 // Types for the API
 export type ParameterProperty = {
      type: SchemaType;
      description: string;
+     items?: Omit<ParameterProperty, 'description'>;
      enum?: string[];
 };
 
@@ -214,6 +239,21 @@ export async function final(results: {
 
           return result.response.text()
 
+     }
+     else if (service == "anthropic") {
+
+          const response = await anthropic.messages.create({
+               model: "claude-3-sonnet-20240229",
+               messages: [
+                    { role: 'user', content: segments.join("\n") },
+                    { role: 'user', content: input }
+               ],
+               system: system,
+               max_tokens: 1024
+          });
+
+          return "text" in response.content[0] ? response.content[0].text : null;
+
      } else if (service == "openai") {
 
           const response = await openai.chat.completions.create({
@@ -222,7 +262,7 @@ export async function final(results: {
                     { role: "user", content: segments.join("\n") },
                     { role: "user", content: input }
                ],
-               model: "gpt-4o",
+               model: "gpt-4o-mini",
                temperature: 1.,
                max_tokens: 1000,
                top_p: 1.
@@ -268,7 +308,7 @@ export async function summarize(content: string) {
 
 export async function processFunctions(functions: AvailableTool[], input: string): Promise<ToolCall[] | null> {
 
-     if (service == "cloudflare" || service == "gradio") {
+     if (functionService == "cloudflare" || functionService == "gradio") {
 
           const response = await cloudflare.workers.ai.run("@hf/nousresearch/hermes-2-pro-mistral-7b", {
                messages: [{
@@ -288,7 +328,60 @@ export async function processFunctions(functions: AvailableTool[], input: string
 
           else return calls;
 
-     } else if (service == "google") {
+     }
+     else if (functionService === "anthropic") {
+          const messages = [{
+               role: "user",
+               content: input
+          }];
+
+          const tools: AnthropicTool[] = functions.map(tool => {
+               const parameters = (!tool.function.parameters ||
+                    Object.keys(tool.function.parameters).length === 0) ?
+                    undefined : tool.function.parameters;
+
+               const input_schema: AnthropicTool["input_schema"] = {
+                    // ...(tool.function.parameters ? tool.function.parameters : {}),
+                    type: "object",
+                    properties: parameters || {}
+               }
+
+               console.log(input_schema)
+
+               return {
+
+                    name: tool.function.name,
+                    description: tool.function.description,
+                    input_schema: input_schema
+
+               };
+          })
+
+          const response = await anthropic.messages.create({
+               messages: messages as any,
+               model: "claude-3-sonnet-20240229",
+               max_tokens: 1024,
+               temperature: 1,
+               system: "Assist the user based on their request using the available tools. Keep responses clear and relevant.",
+               tools: tools
+          });
+
+          if (response.content[0].type !== 'tool_use') {
+               return null;
+          }
+          const toolUseBlocks = response.content
+               .filter((block): block is ToolUseBlock => block.type === 'tool_use')
+               .map(block => ({
+                    name: block.name,
+                    arguments: block.input as {
+                         [key: string]: string;
+                    }
+               }));
+
+          return toolUseBlocks.length > 0 ? toolUseBlocks : null;
+
+     }
+     else if (functionService == "google") {
 
           const session = tools.startChat({
                generationConfig,
@@ -329,23 +422,29 @@ export async function processFunctions(functions: AvailableTool[], input: string
 
           })
 
-     } else if (service == "openai") {
+     } else if (functionService == "openai") {
 
           const response = await openai.chat.completions.create({
                messages: [{
                     role: "system",
-                    content: "Assist the user based on their request using the available tools. Keep responses clear and relevant."
+                    content: "You are a helpful assistant that can use various tools to help users. Analyze the user's request and select the most appropriate tool(s) to fulfill their needs. Available tools include memory storage, message sending, weather checking, profile lookups, and more. Always use the most relevant tool for the task."
                }, {
                     role: "user",
                     content: input
                }],
+               tool_choice: "required",
                tools: functions.map(tool => {
+
+                    const parameters = (!tool.function.parameters || Object.keys(tool.function.parameters).length === 0) ? undefined : tool.function.parameters;
+
+                    if (parameters) parameters.type = parameters.type.toLowerCase() as any;
+
                     return {
                          type: "function",
                          function: {
                               name: tool.function.name,
                               description: tool.function.description,
-                              parameters: (!tool.function.parameters || Object.keys(tool.function.parameters).length === 0) ? undefined : tool.function.parameters,
+                              parameters: parameters,
                          }
                     }
                }),
@@ -355,7 +454,10 @@ export async function processFunctions(functions: AvailableTool[], input: string
                top_p: 1.
           });
 
-          if (response.choices[0].finish_reason === "tool_calls") {
+          console.log(response.choices[0].message)
+
+
+          if (response.choices[0].message.tool_calls) {
 
                if (!response.choices[0].message.tool_calls) return null;
 
@@ -383,6 +485,8 @@ export async function processAI(options: {
      registry: FunctionRegistry,
      memory?: Memory
 }): Promise<string | null> {
+
+     console.log(options.registry)
 
      try {
 
@@ -472,6 +576,8 @@ export async function processAI(options: {
                     return { functionName: call.name, result };
 
                } else {
+
+                    console.log(options.registry)
 
                     return { functionName: call.name, error: 'Function not found in registry' };
 

@@ -1,8 +1,9 @@
-import { type AvailableTool } from "..";
+import { SchemaType, type AvailableTool } from "..";
 import { Maybe } from "../../monads";
 import { getGithubProfile } from "../../socials/github/profile";
 import type { FunctionType } from "../../ai";
-import { SchemaType } from "@google/generative-ai";
+
+
 
 enum TemperatureUnit {
      Celsius = 'celsius',

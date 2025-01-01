@@ -1,6 +1,7 @@
 import type { FunctionRegistry } from "../../";
 import { memory } from ".";
-import { SchemaType } from "@google/generative-ai";
+import { SchemaType } from "../../..";
+
 
 export const append_memory: FunctionRegistry = {
      tool: {
